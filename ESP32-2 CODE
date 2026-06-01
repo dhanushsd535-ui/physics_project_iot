@@ -1,0 +1,85 @@
+#include <Wire.h>
+#include "BluetoothSerial.h"
+
+// Initialize the Bluetooth object
+BluetoothSerial SerialBT;
+
+// The standard I2C address for the QMC5883L Magnetometer
+#define QMC5883L_ADDR 0x0D
+
+// Define the UART Serial pins
+#define RX2_PIN 16
+#define TX2_PIN 17
+
+String latestWifiData = "WIFI:NONE,0";
+
+void setup() {
+  // Initialize standard serial for debugging
+  Serial.begin(115200);
+  
+  // Initialize Hardware Serial 2 to listen to Brain 1
+  Serial2.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
+  
+  // Initialize the Bluetooth Radio
+  SerialBT.begin("Rover_Radar"); 
+  
+  // Initialize I2C for the Magnetometer (SDA = 21, SCL = 22)
+  Wire.begin(21, 22); 
+  initMagnetometer();
+
+  Serial.println("Brain 2: Master Node Initialized. Bluetooth Broadcasting.");
+}
+
+void loop() {
+  // 1. Check the wire for incoming Cyber Data from Brain 1
+  if (Serial2.available()) {
+    latestWifiData = Serial2.readStringUntil('\n');
+    latestWifiData.trim(); // Clean up any invisible newline characters
+  }
+
+  // 2. Read Magnetic Flux from the ground
+  int x, y, z;
+  readMagnetometer(&x, &y, &z);
+  
+  // 3. Package the data for the Dashboard
+  // We use the Z-axis because it points directly down at the buried target
+  String payload = "MAG:" + String(z) + "," + latestWifiData;
+  
+  // 4. Send the complete package to the laptop via Bluetooth
+  SerialBT.println(payload);
+  
+  // Print to the local serial monitor so you can see it working while plugged in
+  Serial.println("Streaming: " + payload); 
+  
+  delay(100); // 10Hz refresh rate (updates the dashboard 10 times a second)
+}
+
+// --- Magnetometer Hardware Functions ---
+
+void initMagnetometer() {
+  // Wake up the QMC5883L and set it to Continuous Reading Mode
+  Wire.beginTransmission(QMC5883L_ADDR);
+  Wire.write(0x0B); // SET/RESET Period Register
+  Wire.write(0x01);
+  Wire.endTransmission();
+
+  Wire.beginTransmission(QMC5883L_ADDR);
+  Wire.write(0x09); // Control Register 1
+  Wire.write(0x1D); // 200Hz data rate, 8G range, Continuous Mode
+  Wire.endTransmission();
+}
+
+void readMagnetometer(int* x, int* y, int* z) {
+  // Tell the sensor we want to read data starting from register 0x00
+  Wire.beginTransmission(QMC5883L_ADDR);
+  Wire.write(0x00); 
+  Wire.endTransmission();
+  
+  // Request 6 bytes of data (2 bytes each for X, Y, Z axes)
+  Wire.requestFrom(QMC5883L_ADDR, 6);
+  if (Wire.available() == 6) {
+    *x = Wire.read() | (Wire.read() << 8);
+    *y = Wire.read() | (Wire.read() << 8);
+    *z = Wire.read() | (Wire.read() << 8);
+  }
+}
