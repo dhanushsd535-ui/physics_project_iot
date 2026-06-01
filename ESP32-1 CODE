@@ -1,0 +1,46 @@
+#include "WiFi.h"
+
+// Define the UART Serial pins
+#define TX2_PIN 17
+#define RX2_PIN 16
+
+void setup() {
+  // Initialize standard serial for laptop debugging
+  Serial.begin(115200);
+  
+  // Initialize Hardware Serial 2 to talk to Brain 2
+  Serial2.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
+
+  // Set Wi-Fi to station mode and disconnect from any active networks
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  
+  Serial.println("Brain 1: Cyber Radar Initialized.");
+}
+
+void loop() {
+  // Perform a rapid Wi-Fi sweep (async = false, show_hidden = true)
+  // This will detect your teammate's mobile hotspot instantly
+  int n = WiFi.scanNetworks(false, true); 
+  
+  if (n > 0) {
+    for (int i = 0; i < n; ++i) {
+      // Extract the MAC Address (BSSID) and Signal Strength (RSSI)
+      String bssid = WiFi.BSSIDstr(i);
+      int32_t rssi = WiFi.RSSI(i);
+      
+      // Format the data exactly as the Python dashboard expects it
+      String dataPacket = "WIFI:" + bssid + "," + String(rssi);
+      
+      // Send the string over the physical wire to Brain 2
+      Serial2.println(dataPacket);
+      
+      delay(50); // Small delay to prevent flooding the wire
+    }
+  }
+  
+  // Clear the memory for the next sweep
+  WiFi.scanDelete();
+  delay(500); // Half-second delay before the next radar sweep
+}
